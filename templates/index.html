@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Humanizer</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f1a; color: #e0e0e0; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
+        .container { width: 100%; max-width: 700px; background: #1a1a2e; border-radius: 12px; padding: 32px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+        h1 { font-size: 24px; margin-bottom: 8px; color: #fff; }
+        .subtitle { color: #888; margin-bottom: 24px; font-size: 14px; }
+        .field { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-size: 14px; color: #aaa; }
+        textarea { width: 100%; height: 120px; background: #252542; border: 1px solid #3a3a5c; border-radius: 8px; color: #fff; padding: 12px; font-size: 14px; resize: vertical; }
+        textarea:focus { outline: none; border-color: #6366f1; }
+        button { background: #6366f1; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-size: 15px; cursor: pointer; }
+        button:hover { background: #5558e3; }
+        button:disabled { background: #444; cursor: not-allowed; }
+        .output { margin-top: 20px; }
+        textarea.output-text { background: #16162a; color: #d1d1d1; }
+        .loader { display: none; text-align: center; margin-top: 16px; color: #888; }
+        .error { color: #f87171; margin-top: 12px; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Humanizer</h1>
+        <p class="subtitle">Transform AI-generated text into natural, human-written content</p>
+        <div class="field">
+            <label for="input">AI-generated text</label>
+            <textarea id="input" placeholder="Paste AI-generated text here..."></textarea>
+        </div>
+        <button id="humanizeBtn" onclick="humanizeText()">Humanize</button>
+        <div class="loader" id="loader">Processing...</div>
+        <div class="error" id="error"></div>
+        <div class="output">
+            <label for="output">Humanized text</label>
+            <textarea id="output" class="output-text" readonly></textarea>
+        </div>
+    </div>
+    <script>
+        async function humanizeText() {
+            const btn = document.getElementById('humanizeBtn');
+            const loader = document.getElementById('loader');
+            const error = document.getElementById('error');
+            const input = document.getElementById('input').value;
+            const output = document.getElementById('output');
+
+            btn.disabled = true;
+            loader.style.display = 'block';
+            error.textContent = '';
+            output.value = '';
+
+            try {
+                const res = await fetch('/humanize', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: input })
+                });
+                const data = await res.json();
+                if (data.error) { error.textContent = data.error; }
+                else { output.value = data.humanized; }
+            } catch (e) { error.textContent = 'Request failed: ' + e.message; }
+            finally { btn.disabled = false; loader.style.display = 'none'; }
+        }
+    </script>
+</body>
+</html>
