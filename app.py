@@ -10,6 +10,9 @@ import re
 from urllib import request as urlrequest
 from urllib.error import HTTPError, URLError
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -22,7 +25,11 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 SKILLS_DIR = Path(os.getenv("SKILLS_DIR", "skills"))
 
-ollama_client = ollama.Client(host=OLLAMA_BASE_URL)
+ollama_headers = {}
+if OLLAMA_API_KEY:
+    ollama_headers["Authorization"] = f"Bearer {OLLAMA_API_KEY}"
+
+ollama_client = ollama.Client(host=OLLAMA_BASE_URL, headers=ollama_headers)
 
 
 def load_skills(skills_dir: Path):
@@ -170,6 +177,8 @@ def run_humanize(text: str, skill: str):
         response = _call_model(system_prompt, text)
         humanized = response["message"]["content"]
         return {"humanized": humanized, "skill": skill}, 200
+    except ollama.ResponseError as e:
+        return {"error": str(e)}, e.status_code
     except Exception as e:
         if skill in FALLBACK_SKILL_PROMPTS and _is_timeout_or_gateway_error(e):
             try:
