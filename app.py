@@ -3,6 +3,10 @@ from werkzeug.exceptions import HTTPException
 import ollama
 import os
 import json
+import hmac
+import hashlib
+import time
+import re
 from urllib import request as urlrequest
 from urllib.error import HTTPError, URLError
 from pathlib import Path
@@ -36,6 +40,39 @@ def load_skills(skills_dir: Path):
 
 SKILLS = load_skills(SKILLS_DIR)
 DEFAULT_SKILL = "default" if "default" in SKILLS else (next(iter(SKILLS), None))
+
+API_KEY_ENABLED = os.getenv("API_KEY_ENABLED", "false").lower() == "true"
+API_KEY = os.getenv("API_KEY", "")
+HMAC_SECRET = os.getenv("HMAC_SECRET", "")
+HMAC_TIMESTAMP_TOLERANCE = int(os.getenv("HMAC_TIMESTAMP_TOLERANCE", "300"))
+
+def _validate_skill_name(skill: str) -> bool:
+    if not skill or not isinstance(skill, str):
+        return False
+    if len(skill) > 50:
+        return False
+    if not re.match(r'^[a-zA-Z0-9_-]+$', skill):
+        return False
+    return True
+
+def _verify_hmac_signature(timestamp: str, body: str, signature: str) -> bool:
+    if not HMAC_SECRET:
+        return True
+    try:
+        ts = int(timestamp)
+        if abs(time.time() - ts) > HMAC_TIMESTAMP_TOLERANCE:
+            return False
+        payload = f"{timestamp}:{body}"
+        expected = hmac.new(HMAC_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected, signature)
+    except (ValueError, TypeError):
+        return False
+
+def _verify_api_key():
+    if not API_KEY_ENABLED:
+        return True
+    provided = request.headers.get("X-API-Key", "")
+    return hmac.compare_digest(API_KEY, provided)
 
 FALLBACK_SKILL_PROMPTS = {
     "business": "Rewrite for business communication: direct, natural, and specific. Remove robotic phrasing, hype, filler, and vague claims. Preserve facts and commitments. Return only rewritten text.",
@@ -160,9 +197,22 @@ def list_skills():
 
 @app.route("/api/v1/humanize", methods=["POST"])
 def humanize_v1():
+    if not _verify_api_key():
+        return jsonify({"error": "Invalid or missing API key"}), 401
+
     data = request.get_json(silent=True) or {}
     text = data.get("text", "")
     skill = data.get("skill", DEFAULT_SKILL)
+
+    if not _validate_skill_name(skill):
+        return jsonify({"error": "Invalid skill name"}), 400
+
+    timestamp = request.headers.get("X-Timestamp", "")
+    signature = request.headers.get("X-Signature", "")
+    body = request.get_data(as_text=True)
+    if not _verify_hmac_signature(timestamp, body, signature):
+        return jsonify({"error": "Invalid or expired signature"}), 401
+
     payload, status = run_humanize(text, skill)
     return jsonify(payload), status
 

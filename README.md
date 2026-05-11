@@ -90,6 +90,77 @@ curl -X POST http://localhost:8000/api/v1/humanize \
 
 Legacy endpoint `/humanize` is also supported.
 
+## Security
+
+Two optional security layers can be enabled to protect the API.
+
+### API Key Authentication
+
+Enable by setting `API_KEY_ENABLED=true` and providing a secret key:
+
+```bash
+export API_KEY_ENABLED=true
+export API_KEY=your-secret-api-key
+python app.py
+```
+
+When enabled, include the key in requests:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/humanize \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-api-key" \
+  -d '{"text":"The implementation is currently underway.","skill":"business"}'
+```
+
+Invalid or missing keys return `401 Unauthorized`.
+
+### HMAC Signature Verification
+
+Enable by setting `HMAC_SECRET` (timestamp tolerance is configurable, defaults to 300 seconds):
+
+```bash
+export HMAC_SECRET=your-hmac-secret
+export HMAC_TIMESTAMP_TOLERANCE=300
+python app.py
+```
+
+When enabled, requests must include:
+- `X-Timestamp`: Unix timestamp of the request
+- `X-Signature`: HMAC-SHA256 signature of `{timestamp}:{raw_body}`
+
+Example signature generation in Python:
+
+```python
+import hmac
+import hashlib
+import time
+import json
+
+timestamp = str(int(time.time()))
+body = json.dumps({"text": "The implementation is underway.", "skill": "business"})
+payload = f"{timestamp}:{body}"
+signature = hmac.new(b"your-hmac-secret", payload.encode(), hashlib.sha256).hexdigest()
+```
+
+Send the signed request:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/humanize \
+  -H "Content-Type: application/json" \
+  -H "X-Timestamp: $timestamp" \
+  -H "X-Signature: $signature" \
+  -d "$body"
+```
+
+Invalid, expired, or tampered signatures return `401 Unauthorized`.
+
+### Security Features
+
+- **Skill name validation**: Blocks path traversal (`../`), null bytes, and special characters. Only `[a-zA-Z0-9_-]` allowed, max 50 chars.
+- **Both disabled by default**: Set environment variables to enable.
+- **Backward compatible**: When disabled, the API works as before.
+
 ## Testing
 
 The project has no dedicated test suite yet, but you can run these checks:
