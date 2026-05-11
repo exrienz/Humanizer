@@ -14,13 +14,16 @@
         label { display: block; margin-bottom: 8px; font-size: 14px; color: #aaa; }
         textarea { width: 100%; height: 120px; background: #252542; border: 1px solid #3a3a5c; border-radius: 8px; color: #fff; padding: 12px; font-size: 14px; resize: vertical; }
         textarea:focus { outline: none; border-color: #6366f1; }
-        button { background: #6366f1; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-size: 15px; cursor: pointer; }
+        select { width: 100%; background: #252542; border: 1px solid #3a3a5c; border-radius: 8px; color: #fff; padding: 12px; font-size: 14px; margin-bottom: 16px; cursor: pointer; }
+        select:focus { outline: none; border-color: #6366f1; }
+        button { background: #6366f1; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-size: 15px; cursor: pointer; width: 100%; }
         button:hover { background: #5558e3; }
         button:disabled { background: #444; cursor: not-allowed; }
         .output { margin-top: 20px; }
         textarea.output-text { background: #16162a; color: #d1d1d1; }
         .loader { display: none; text-align: center; margin-top: 16px; color: #888; }
         .error { color: #f87171; margin-top: 12px; font-size: 13px; }
+        .skill-info { color: #666; font-size: 12px; margin-top: 4px; }
     </style>
 </head>
 <body>
@@ -31,6 +34,11 @@
             <label for="input">AI-generated text</label>
             <textarea id="input" placeholder="Paste AI-generated text here..."></textarea>
         </div>
+        <div class="field">
+            <label for="skill">Style</label>
+            <select id="skill"></select>
+            <p class="skill-info" id="skillInfo">Select a style for your humanized text</p>
+        </div>
         <button id="humanizeBtn" onclick="humanizeText()">Humanize</button>
         <div class="loader" id="loader">Processing...</div>
         <div class="error" id="error"></div>
@@ -40,12 +48,55 @@
         </div>
     </div>
     <script>
+        const skillDescriptions = {
+            'default': 'Natural and conversational - general purpose humanizing',
+            'business': 'Professional and direct - useful for work writing',
+            'creative': 'More expressive - keeps meaning with extra personality',
+            'technical': 'Precise and clear - preserves technical accuracy',
+            'explain': 'Simple and accessible - easier to understand'
+        };
+
+        const skillSelect = document.getElementById('skill');
+        const skillInfo = document.getElementById('skillInfo');
+
+        skillSelect.addEventListener('change', () => {
+            skillInfo.textContent = skillDescriptions[skillSelect.value] || 'Style loaded from skill file';
+        });
+
+        async function loadSkills() {
+            try {
+                const res = await fetch('/api/v1/skills');
+                const contentType = res.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) {
+                    throw new Error(`Skills endpoint returned non-JSON (${res.status})`);
+                }
+                const data = await res.json();
+                const skills = data.skills || [];
+                const defaultSkill = data.default || 'default';
+
+                skillSelect.innerHTML = '';
+                skills.forEach((name) => {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = name;
+                    if (name === defaultSkill) option.selected = true;
+                    skillSelect.appendChild(option);
+                });
+
+                skillInfo.textContent = skillDescriptions[skillSelect.value] || 'Style loaded from skill file';
+            } catch (e) {
+                skillSelect.innerHTML = '<option value="default">default</option>';
+                skillInfo.textContent = 'Could not load skills automatically';
+            }
+        }
+
         async function humanizeText() {
             const btn = document.getElementById('humanizeBtn');
             const loader = document.getElementById('loader');
             const error = document.getElementById('error');
             const input = document.getElementById('input').value;
             const output = document.getElementById('output');
+            const skill = document.getElementById('skill').value;
 
             btn.disabled = true;
             loader.style.display = 'block';
@@ -53,17 +104,31 @@
             output.value = '';
 
             try {
-                const res = await fetch('/humanize', {
+                const res = await fetch('/api/v1/humanize', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: input })
+                    body: JSON.stringify({ text: input, skill: skill })
                 });
+                const contentType = res.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) {
+                    const raw = await res.text();
+                    error.textContent = `Server returned non-JSON response (${res.status}). ${raw.slice(0, 120)}`;
+                    return;
+                }
+
                 const data = await res.json();
+                if (!res.ok) {
+                    error.textContent = data.error || `Request failed with status ${res.status}`;
+                    return;
+                }
+
                 if (data.error) { error.textContent = data.error; }
-                else { output.value = data.humanized; }
+                else { output.value = data.humanized || ''; }
             } catch (e) { error.textContent = 'Request failed: ' + e.message; }
             finally { btn.disabled = false; loader.style.display = 'none'; }
         }
+
+        loadSkills();
     </script>
 </body>
 </html>
